@@ -1,0 +1,804 @@
+
+import sys
+import psutil
+import time
+import tkinter as tk
+from tkinter import ttk, scrolledtext, filedialog, messagebox
+import csv
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from collections import defaultdict, deque
+from datetime import datetime
+import platform
+import socket
+import threading
+import webbrowser
+import pandas as pd
+from PIL import Image, ImageTk
+
+class SecurityLogger:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Advanced OS Security Monitor")
+        self.root.geometry("1200x800")
+        self.root.minsize(1000, 700)
+        
+        self.bg_color = '#2d2d2d'
+        self.card_color = '#3a3a3a'
+        self.text_color = '#ffffff'
+        self.accent_color = '#4a6fa5'
+        self.alert_color = '#d9534f'
+        self.warning_color = '#f0ad4e'
+        self.success_color = '#5cb85c'
+        
+        self.root.configure(bg=self.bg_color)
+        self.setup_styles()
+        
+        self.logs = deque(maxlen=500)
+        self.process_history = defaultdict(list)
+        self.anomaly_threshold = 5
+        self.fault_count = 0
+        self.log_count = 0
+        self.start_time = time.time()
+        self.running = True
+        self.alert_count = 0
+        self.warning_count = 0
+        self.system_info = self.get_system_info()
+        
+        self.create_main_frame()
+        self.create_header()
+        self.create_control_panel()
+        self.create_dashboard()
+        self.create_log_panel()
+        self.create_status_bar()
+        
+        self.start_monitoring()
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+    
+    def setup_styles(self):
+        style = ttk.Style()
+        style.theme_use('clam')
+        
+        style.configure("Dark.TFrame", background=self.bg_color)
+        style.configure("Dark.TLabel", background=self.bg_color, foreground=self.text_color)
+        style.configure("Card.TFrame", background=self.card_color, relief=tk.RAISED, borderwidth=1)
+        style.configure("Card.TLabel", background=self.card_color, foreground=self.text_color)
+        style.configure("Accent.TButton", foreground='white', background=self.accent_color)
+        style.map("Accent.TButton",
+                background=[('active', '#3a5a8a'), ('pressed', '#2a4a7a')])
+        style.configure("Alert.TButton", foreground='white', background=self.alert_color)
+        style.configure("Title.TLabel", font=('Arial', 12, 'bold'), background=self.card_color, foreground=self.text_color)
+        style.configure("Value.TLabel", font=('Arial', 14, 'bold'), background=self.card_color, foreground=self.accent_color)
+        
+    def create_main_frame(self):
+        self.main_frame = ttk.Frame(self.root, style="Dark.TFrame")
+        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+    def create_header(self):
+        header_frame = ttk.Frame(self.main_frame, style="Dark.TFrame")
+        header_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        title_label = ttk.Label(header_frame, 
+                              text="Advanced OS Security Monitor", 
+                              font=('Arial', 18, 'bold'), 
+                              style="Dark.TLabel")
+        title_label.pack(side=tk.LEFT)
+        
+        info_btn = ttk.Button(header_frame, 
+                            text="System Info", 
+                            command=self.show_system_info,
+                            style="Accent.TButton")
+        info_btn.pack(side=tk.RIGHT, padx=5)
+        
+        help_btn = ttk.Button(header_frame, 
+                            text="Help", 
+                            command=self.show_help,
+                            style="Accent.TButton")
+        help_btn.pack(side=tk.RIGHT, padx=5)
+    
+    def create_control_panel(self):
+        control_frame = ttk.Frame(self.main_frame, style="Dark.TFrame")
+        control_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        filter_frame = ttk.Frame(control_frame, style="Dark.TFrame")
+        filter_frame.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(filter_frame, text="Filter:", style="Dark.TLabel").pack(side=tk.LEFT, padx=5)
+        self.filter_var = tk.StringVar(value="All Events")
+        filter_combo = ttk.Combobox(filter_frame, 
+                                  textvariable=self.filter_var, 
+                                  values=["All Events", "Process Events", "Resource Usage", 
+                                          "Security Alerts", "Faults", "Network Activity"],
+                                  state="readonly",
+                                  width=15)
+        filter_combo.pack(side=tk.LEFT, padx=5)
+        filter_combo.bind('<<ComboboxSelected>>', self.filter_logs)
+        
+        btn_frame = ttk.Frame(control_frame, style="Dark.TFrame")
+        btn_frame.pack(side=tk.RIGHT)
+        
+        buttons = [
+            ("Export Logs", self.export_logs, "Accent.TButton"),
+            ("Clear Logs", self.clear_logs, "Alert.TButton"),
+            ("Show Graph", self.show_graph, "Accent.TButton"),
+            ("Process Explorer", self.show_process_explorer, "Accent.TButton"),
+            ("Network Monitor", self.show_network_monitor, "Accent.TButton")
+        ]
+        
+        for text, command, style_name in buttons:
+            btn = ttk.Button(btn_frame, 
+                            text=text, 
+                            command=command,
+                            style=style_name)
+            btn.pack(side=tk.LEFT, padx=5)
+    
+    def create_dashboard(self):
+        dashboard_frame = ttk.Frame(self.main_frame, style="Dark.TFrame")
+        dashboard_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        metrics = [
+            ("CPU Usage", f"{psutil.cpu_percent()}%", self.update_cpu_usage),
+            ("Memory Usage", f"{psutil.virtual_memory().percent}%", self.update_mem_usage),
+            ("Alerts", "0", self.update_alert_count),
+            ("Warnings", "0", self.update_warning_count),
+            ("Processes", f"{len(psutil.pids())}", self.update_process_count),
+            ("Uptime", self.format_uptime(), self.update_uptime)
+        ]
+        
+        for i, (title, value, update_func) in enumerate(metrics):
+            card = ttk.Frame(dashboard_frame, style="Card.TFrame", width=150, height=80)
+            card.grid(row=0, column=i, padx=5, sticky="nsew")
+            card.grid_propagate(False)
+            
+            ttk.Label(card, text=title, style="Title.TLabel").pack(pady=(5, 0))
+            value_label = ttk.Label(card, text=value, style="Value.TLabel")
+            value_label.pack(pady=(0, 5))
+            
+            setattr(self, f"{title.lower().replace(' ', '_')}_label", value_label)
+            setattr(self, f"{title.lower().replace(' ', '_')}_updater", update_func)
+            
+            dashboard_frame.columnconfigure(i, weight=1)
+    
+    def create_log_panel(self):
+        log_frame = ttk.Frame(self.main_frame, style="Dark.TFrame")
+        log_frame.pack(fill=tk.BOTH, expand=True)
+        
+        self.log_display = scrolledtext.ScrolledText(log_frame, 
+                                                   height=20, 
+                                                   bg=self.card_color, 
+                                                   fg=self.text_color,
+                                                   insertbackground=self.text_color,
+                                                   wrap=tk.WORD)
+        self.log_display.pack(fill=tk.BOTH, expand=True)
+        
+        self.log_display.tag_config("ALERT", foreground=self.alert_color)
+        self.log_display.tag_config("WARNING", foreground=self.warning_color)
+        self.log_display.tag_config("INFO", foreground=self.text_color)
+        self.log_display.tag_config("SUCCESS", foreground=self.success_color)
+    
+    def create_status_bar(self):
+        self.status_var = tk.StringVar(value="Initializing system monitoring...")
+        status_bar = ttk.Frame(self.main_frame, style="Dark.TFrame")
+        status_bar.pack(fill=tk.X, pady=(5, 0))
+        
+        ttk.Label(status_bar, 
+                 textvariable=self.status_var, 
+                 style="Dark.TLabel").pack(side=tk.LEFT)
+        
+        ttk.Label(status_bar, 
+                 text=f"System: {platform.system()} {platform.release()}",
+                 style="Dark.TLabel").pack(side=tk.RIGHT)
+    
+    def start_monitoring(self):
+        self.monitor_thread = threading.Thread(target=self.monitor_system, daemon=True)
+        self.monitor_thread.start()
+        
+        self.update_thread = threading.Thread(target=self.update_dashboard, daemon=True)
+        self.update_thread.start()
+    
+    def monitor_system(self):
+        while self.running:
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            try:
+                self.monitor_processes(current_time)
+                self.monitor_resources(current_time)
+                self.monitor_network(current_time)
+                
+                elapsed_time = time.time() - self.start_time
+                fault_rate = self.fault_count / elapsed_time if elapsed_time > 0 else 0
+                
+                self.root.after(0, self.status_var.set, 
+                              f"Monitoring | Events: {self.log_count} | Alerts: {self.alert_count} | Warnings: {self.warning_count} | Fault Rate: {fault_rate:.2f}/sec")
+                
+            except Exception as e:
+                self.log_event(f"Error in monitoring thread: {str(e)}", "ALERT")
+                self.fault_count += 1
+            
+            time.sleep(1)
+    
+    def monitor_processes(self, current_time):
+        for proc in psutil.process_iter(['pid', 'name', 'username', 'cpu_percent', 'memory_percent', 'create_time']):
+            try:
+                name = proc.info['name']
+                cpu_percent = proc.info['cpu_percent'] or 0
+                memory_percent = proc.info['memory_percent'] or 0
+                pid = proc.info['pid']
+                username = proc.info['username'] or "N/A"
+                
+                self.process_history[name].append({
+                    'time': current_time, 
+                    'cpu': cpu_percent, 
+                    'memory': memory_percent,
+                    'pid': pid,
+                    'username': username
+                })
+                
+                if len(self.process_history[name]) > self.anomaly_threshold:
+                    recent_cpu = [p['cpu'] for p in self.process_history[name][-self.anomaly_threshold:]]
+                    recent_mem = [p['memory'] for p in self.process_history[name][-self.anomaly_threshold:]]
+                    
+                    if max(recent_cpu) > 80:
+                        self.log_event(f"Security Alert: High CPU usage ({max(recent_cpu):.1f}%) detected for {name} (PID: {pid}, User: {username})", "ALERT")
+                        self.alert_count += 1
+                    
+                    if max(recent_mem) > 80:
+                        self.log_event(f"Security Alert: High Memory usage ({max(recent_mem):.1f}%) detected for {name} (PID: {pid}, User: {username})", "ALERT")
+                        self.alert_count += 1
+                    
+                    if len([p for p in psutil.process_iter() if p.name() == name]) > 20:
+                        self.log_event(f"Security Alert: Potential fork bomb detected - {len([p for p in psutil.process_iter() if p.name() == name])} instances of {name} running", "ALERT")
+                        self.alert_count += 1
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                self.fault_count += 1
+                continue
+    
+    def monitor_resources(self, current_time):
+        cpu_percent = psutil.cpu_percent()
+        memory_percent = psutil.virtual_memory().percent
+        disk_percent = psutil.disk_usage('/').percent
+        
+        if cpu_percent > 80:
+            self.log_event(f"System Warning: High CPU usage detected ({cpu_percent}%)", "WARNING")
+            self.warning_count += 1
+        
+        if memory_percent > 80:
+            self.log_event(f"System Warning: High Memory usage detected ({memory_percent}%)", "WARNING")
+            self.warning_count += 1
+        
+        if disk_percent > 90:
+            self.log_event(f"System Warning: High Disk usage detected ({disk_percent}%)", "WARNING")
+            self.warning_count += 1
+        
+        try:
+            temps = psutil.sensors_temperatures()
+            if 'coretemp' in temps:
+                for entry in temps['coretemp']:
+                    if entry.current > 80:
+                        self.log_event(f"Hardware Warning: High temperature detected ({entry.current}°C on {entry.label})", "WARNING")
+                        self.warning_count += 1
+        except AttributeError:
+            pass
+    
+    def monitor_network(self, current_time):
+        try:
+            connections = psutil.net_connections()
+            unusual_ports = []
+            
+            for conn in connections:
+                if conn.status == 'LISTEN' and conn.laddr.port > 49152:
+                    unusual_ports.append(conn.laddr.port)
+                
+                if conn.status == 'ESTABLISHED' and hasattr(conn, 'raddr'):
+                    if conn.raddr.port in [4444, 5555, 6666, 7777, 8888]:
+                        self.log_event(f"Security Alert: Suspicious connection to {conn.raddr.ip}:{conn.raddr.port}", "ALERT")
+                        self.alert_count += 1
+            
+            if unusual_ports:
+                self.log_event(f"Network Warning: Unusual ports listening: {unusual_ports}", "WARNING")
+                self.warning_count += 1
+                
+        except Exception as e:
+            self.log_event(f"Error monitoring network: {str(e)}", "ALERT")
+            self.fault_count += 1
+    
+    def update_dashboard(self):
+        while self.running:
+            self.update_cpu_usage()
+            self.update_mem_usage()
+            self.update_alert_count()
+            self.update_warning_count()
+            self.update_process_count()
+            self.update_uptime()
+            
+            time.sleep(2)
+    
+    def update_cpu_usage(self):
+        cpu = psutil.cpu_percent()
+        self.cpu_usage_label.config(text=f"{cpu}%")
+    
+    def update_mem_usage(self):
+        mem = psutil.virtual_memory().percent
+        self.memory_usage_label.config(text=f"{mem}%")
+    
+    def update_alert_count(self):
+        self.alerts_label.config(text=str(self.alert_count))
+    
+    def update_warning_count(self):
+        self.warnings_label.config(text=str(self.warning_count))
+    
+    def update_process_count(self):
+        self.processes_label.config(text=str(len(psutil.pids())))
+    
+    def update_uptime(self):
+        self.uptime_label.config(text=self.format_uptime())
+    
+    def format_uptime(self):
+        boot_time = psutil.boot_time()
+        uptime_seconds = time.time() - boot_time
+        hours, remainder = divmod(uptime_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{int(hours)}h {int(minutes)}m"
+    
+    def log_event(self, event, event_type="INFO"):
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"[{timestamp}] {event}"
+        self.logs.append((timestamp, event, event_type))
+        self.log_count += 1
+        
+        self.root.after(0, self._update_log_display, log_entry, event_type)
+    
+    def _update_log_display(self, log_entry, event_type):
+        self.log_display.insert(tk.END, log_entry + '\n', event_type)
+        self.log_display.see(tk.END)
+    
+    def filter_logs(self, event=None):
+        self.log_display.delete('1.0', tk.END)
+        filter_text = self.filter_var.get()
+        
+        for timestamp, log, log_type in self.logs:
+            if filter_text == "All Events" or \
+               (filter_text == "Process Events" and ("Process" in log or "PID:" in log)) or \
+               (filter_text == "Resource Usage" and ("usage" in log.lower() or "CPU" in log or "Memory" in log)) or \
+               (filter_text == "Security Alerts" and log_type == "ALERT") or \
+               (filter_text == "Faults" and "Error" in log) or \
+               (filter_text == "Network Activity" and ("connection" in log.lower() or "port" in log.lower())):
+                self.log_display.insert(tk.END, f"[{timestamp}] {log}\n", log_type)
+    
+    def export_logs(self):
+        file_name = filedialog.asksaveasfilename(
+            defaultextension=".csv", 
+            filetypes=[("CSV Files", "*.csv"), ("Text Files", "*.txt"), ("Excel Files", "*.xlsx")],
+            title="Export Logs"
+        )
+        
+        if not file_name:
+            return
+            
+        try:
+            if file_name.endswith('.csv'):
+                with open(file_name, 'w', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow(['Timestamp', 'Event', 'Type'])
+                    for log in self.logs:
+                        writer.writerow(log)
+            elif file_name.endswith('.txt'):
+                with open(file_name, 'w') as txtfile:
+                    for log in self.logs:
+                        txtfile.write(f"[{log[0]}] {log[1]}\n")
+            elif file_name.endswith('.xlsx'):
+                df = pd.DataFrame(self.logs, columns=['Timestamp', 'Event', 'Type'])
+                df.to_excel(file_name, index=False)
+            
+            self.log_event("Logs exported successfully", "SUCCESS")
+            messagebox.showinfo("Success", "Logs exported successfully!")
+        except Exception as e:
+            self.log_event(f"Failed to export logs: {str(e)}", "ALERT")
+            messagebox.showerror("Error", f"Failed to export logs: {str(e)}")
+    
+    def clear_logs(self):
+        if messagebox.askyesno("Confirm", "Are you sure you want to clear all logs?"):
+            self.logs.clear()
+            self.log_display.delete('1.0', tk.END)
+            self.process_history.clear()
+            self.alert_count = 0
+            self.warning_count = 0
+            self.log_count = 0
+            self.fault_count = 0
+            self.start_time = time.time()
+            self.log_event("Logs cleared", "INFO")
+    
+    def show_graph(self):
+        graph_window = tk.Toplevel(self.root)
+        graph_window.title("System Metrics")
+        graph_window.geometry("800x600")
+        
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6))
+        
+        time_points = list(range(10))
+        cpu_data = [psutil.cpu_percent() for _ in range(10)]
+        mem_data = [psutil.virtual_memory().percent for _ in range(10)]
+        
+        ax1.plot(time_points, cpu_data, label="CPU Usage (%)", marker='o', color='#4a6fa5')
+        ax1.plot(time_points, mem_data, label="Memory Usage (%)", marker='s', color='#5cb85c')
+        ax1.set_xlabel("Time (seconds)")
+        ax1.set_ylabel("Usage (%)")
+        ax1.set_title("System Resource Usage")
+        ax1.legend()
+        ax1.grid(True, linestyle='--', alpha=0.7)
+        
+        process_counts = [len(psutil.pids()) for _ in range(10)]
+        ax2.plot(time_points, process_counts, label="Process Count", marker='^', color='#d9534f')
+        ax2.set_xlabel("Time (seconds)")
+        ax2.set_ylabel("Count")
+        ax2.set_title("Running Processes")
+        ax2.legend()
+        ax2.grid(True, linestyle='--', alpha=0.7)
+        
+        plt.tight_layout()
+        
+        canvas = FigureCanvasTkAgg(fig, master=graph_window)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        refresh_btn = ttk.Button(graph_window, 
+                               text="Refresh", 
+                               command=lambda: self.refresh_graph(fig, ax1, ax2, canvas),
+                               style="Accent.TButton")
+        refresh_btn.pack(pady=5)
+    
+    def refresh_graph(self, fig, ax1, ax2, canvas):
+        ax1.clear()
+        ax2.clear()
+        
+        time_points = list(range(10))
+        cpu_data = [psutil.cpu_percent() for _ in range(10)]
+        mem_data = [psutil.virtual_memory().percent for _ in range(10)]
+        
+        ax1.plot(time_points, cpu_data, label="CPU Usage (%)", marker='o', color='#4a6fa5')
+        ax1.plot(time_points, mem_data, label="Memory Usage (%)", marker='s', color='#5cb85c')
+        ax1.set_xlabel("Time (seconds)")
+        ax1.set_ylabel("Usage (%)")
+        ax1.set_title("System Resource Usage")
+        ax1.legend()
+        ax1.grid(True, linestyle='--', alpha=0.7)
+        
+        process_counts = [len(psutil.pids()) for _ in range(10)]
+        ax2.plot(time_points, process_counts, label="Process Count", marker='^', color='#d9534f')
+        ax2.set_xlabel("Time (seconds)")
+        ax2.set_ylabel("Count")
+        ax2.set_title("Running Processes")
+        ax2.legend()
+        ax2.grid(True, linestyle='--', alpha=0.7)
+        
+        canvas.draw()
+    
+    def show_process_explorer(self):
+        process_window = tk.Toplevel(self.root)
+        process_window.title("Process Explorer")
+        process_window.geometry("900x600")
+        
+        tree = ttk.Treeview(process_window, columns=('PID', 'Name', 'CPU%', 'Memory%', 'User'), show='headings')
+        tree.heading('PID', text='PID')
+        tree.heading('Name', text='Name')
+        tree.heading('CPU%', text='CPU%')
+        tree.heading('Memory%', text='Memory%')
+        tree.heading('User', text='User')
+        
+        tree.column('PID', width=80)
+        tree.column('Name', width=200)
+        tree.column('CPU%', width=80)
+        tree.column('Memory%', width=80)
+        tree.column('User', width=150)
+        
+        tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        scrollbar = ttk.Scrollbar(process_window, orient=tk.VERTICAL, command=tree.yview)
+        tree.configure(yscroll=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.populate_process_tree(tree)
+        
+        btn_frame = ttk.Frame(process_window)
+        btn_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Button(btn_frame, 
+                  text="Refresh", 
+                  command=lambda: self.populate_process_tree(tree),
+                  style="Accent.TButton").pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(btn_frame, 
+                  text="Kill Process", 
+                  command=lambda: self.kill_selected_process(tree),
+                  style="Alert.TButton").pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(btn_frame, 
+                  text="Details", 
+                  command=lambda: self.show_process_details(tree),
+                  style="Accent.TButton").pack(side=tk.LEFT, padx=5)
+    
+    def populate_process_tree(self, tree):
+        for item in tree.get_children():
+            tree.delete(item)
+        
+        for proc in psutil.process_iter(['pid', 'name', 'username', 'cpu_percent', 'memory_percent']):
+            try:
+                tree.insert('', 'end', values=(
+                    proc.info['pid'],
+                    proc.info['name'],
+                    f"{proc.info['cpu_percent']:.1f}",
+                    f"{proc.info['memory_percent']:.1f}",
+                    proc.info['username'] or "N/A"
+                ))
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+        
+        tree.heading('CPU%', command=lambda: self.sort_treeview(tree, 'CPU%', False))
+    
+    def sort_treeview(self, tree, col, reverse):
+        data = [(tree.set(child, col), child) for child in tree.get_children('')]
+        
+        try:
+            data.sort(key=lambda x: float(x[0].rstrip('%')), reverse=reverse)
+        except ValueError:
+            data.sort(reverse=reverse)
+        
+        for index, (val, child) in enumerate(data):
+            tree.move(child, '', index)
+        
+        tree.heading(col, command=lambda: self.sort_treeview(tree, col, not reverse))
+    
+    def kill_selected_process(self, tree):
+        selected = tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "No process selected")
+            return
+            
+        pid = int(tree.item(selected[0], 'values')[0])
+        name = tree.item(selected[0], 'values')[1]
+        
+        if messagebox.askyesno("Confirm", f"Are you sure you want to kill process {name} (PID: {pid})?"):
+            try:
+                p = psutil.Process(pid)
+                p.terminate()
+                self.log_event(f"Process terminated: {name} (PID: {pid})", "INFO")
+                self.populate_process_tree(tree)
+            except Exception as e:
+                self.log_event(f"Failed to kill process {name} (PID: {pid}): {str(e)}", "ALERT")
+                messagebox.showerror("Error", f"Failed to kill process: {str(e)}")
+    
+    def show_process_details(self, tree):
+        selected = tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "No process selected")
+            return
+            
+        pid = int(tree.item(selected[0], 'values')[0])
+        
+        try:
+            p = psutil.Process(pid)
+            details = {
+                "PID": pid,
+                "Name": p.name(),
+                "Status": p.status(),
+                "CPU %": p.cpu_percent(),
+                "Memory %": p.memory_percent(),
+                "User": p.username(),
+                "Create Time": datetime.fromtimestamp(p.create_time()).strftime("%Y-%m-%d %H:%M:%S"),
+                "Executable": p.exe(),
+                "Command Line": " ".join(p.cmdline()) if p.cmdline() else "N/A",
+                "Threads": p.num_threads(),
+                "Open Files": len(p.open_files()),
+                "Connections": len(p.connections())
+            }
+            
+            detail_window = tk.Toplevel(self.root)
+            detail_window.title(f"Process Details - PID: {pid}")
+            detail_window.geometry("600x400")
+            
+            text = scrolledtext.ScrolledText(detail_window, wrap=tk.WORD)
+            text.pack(fill=tk.BOTH, expand=True)
+            
+            for key, value in details.items():
+                text.insert(tk.END, f"{key}: {value}\n")
+            
+            text.config(state=tk.DISABLED)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to get process details: {str(e)}")
+    
+    def show_network_monitor(self):
+        net_window = tk.Toplevel(self.root)
+        net_window.title("Network Monitor")
+        net_window.geometry("900x600")
+        
+        tree = ttk.Treeview(net_window, columns=('Protocol', 'Local IP', 'Local Port', 'Remote IP', 'Remote Port', 'Status', 'PID'), show='headings')
+        tree.heading('Protocol', text='Protocol')
+        tree.heading('Local IP', text='Local IP')
+        tree.heading('Local Port', text='Local Port')
+        tree.heading('Remote IP', text='Remote IP')
+        tree.heading('Remote Port', text='Remote Port')
+        tree.heading('Status', text='Status')
+        tree.heading('PID', text='PID')
+        
+        tree.column('Protocol', width=80)
+        tree.column('Local IP', width=150)
+        tree.column('Local Port', width=80)
+        tree.column('Remote IP', width=150)
+        tree.column('Remote Port', width=80)
+        tree.column('Status', width=100)
+        tree.column('PID', width=80)
+        
+        tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        scrollbar = ttk.Scrollbar(net_window, orient=tk.VERTICAL, command=tree.yview)
+        tree.configure(yscroll=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.populate_network_tree(tree)
+        
+        btn_frame = ttk.Frame(net_window)
+        btn_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Button(btn_frame, 
+                  text="Refresh", 
+                  command=lambda: self.populate_network_tree(tree),
+                  style="Accent.TButton").pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(btn_frame, 
+                  text="Details", 
+                  command=lambda: self.show_network_details(tree),
+                  style="Accent.TButton").pack(side=tk.LEFT, padx=5)
+    
+    def populate_network_tree(self, tree):
+        for item in tree.get_children():
+            tree.delete(item)
+        
+        try:
+            for conn in psutil.net_connections():
+                if conn.status == 'NONE':
+                    continue
+                    
+                local_addr = f"{conn.laddr.ip}:{conn.laddr.port}" if conn.laddr else "N/A"
+                remote_addr = f"{conn.raddr.ip}:{conn.raddr.port}" if conn.raddr else "N/A"
+                
+                tree.insert('', 'end', values=(
+                    conn.type.upper(),
+                    conn.laddr.ip if conn.laddr else "N/A",
+                    conn.laddr.port if conn.laddr else "N/A",
+                    conn.raddr.ip if conn.raddr else "N/A",
+                    conn.raddr.port if conn.raddr else "N/A",
+                    conn.status,
+                    conn.pid
+                ))
+        except Exception as e:
+            self.log_event(f"Error getting network connections: {str(e)}", "ALERT")
+    
+    def show_network_details(self, tree):
+        selected = tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "No connection selected")
+            return
+            
+        values = tree.item(selected[0], 'values')
+        
+        detail_window = tk.Toplevel(self.root)
+        detail_window.title("Network Connection Details")
+        detail_window.geometry("500x300")
+        
+        text = scrolledtext.ScrolledText(detail_window, wrap=tk.WORD)
+        text.pack(fill=tk.BOTH, expand=True)
+        
+        details = {
+            "Protocol": values[0],
+            "Local Address": f"{values[1]}:{values[2]}",
+            "Remote Address": f"{values[3]}:{values[4]}" if values[3] != "N/A" else "N/A",
+            "Status": values[5],
+            "Process ID": values[6]
+        }
+        
+        try:
+            if values[6] != "N/A":
+                p = psutil.Process(int(values[6]))
+                details["Process Name"] = p.name()
+                details["Process User"] = p.username()
+                details["Process Status"] = p.status()
+                details["Process Create Time"] = datetime.fromtimestamp(p.create_time()).strftime("%Y-%m-%d %H:%M:%S")
+        except Exception as e:
+            details["Process Info"] = f"Error: {str(e)}"
+        
+        for key, value in details.items():
+            text.insert(tk.END, f"{key}: {value}\n")
+        
+        text.config(state=tk.DISABLED)
+    
+    def get_system_info(self):
+        info = {
+            "System": platform.system(),
+            "Node Name": platform.node(),
+            "Release": platform.release(),
+            "Version": platform.version(),
+            "Machine": platform.machine(),
+            "Processor": platform.processor(),
+            "Boot Time": datetime.fromtimestamp(psutil.boot_time()).strftime("%Y-%m-%d %H:%M:%S"),
+            "CPU Cores": psutil.cpu_count(logical=False),
+            "Logical CPUs": psutil.cpu_count(),
+            "Total Memory": f"{psutil.virtual_memory().total / (1024**3):.2f} GB",
+            "Disk Usage": f"{psutil.disk_usage('/').percent}%",
+            "Network IPs": [addr.address for addr in psutil.net_if_addrs().get('Ethernet', []) if addr.family == socket.AF_INET]
+        }
+        return info
+    
+    def show_system_info(self):
+        info_window = tk.Toplevel(self.root)
+        info_window.title("System Information")
+        info_window.geometry("500x400")
+        
+        text = scrolledtext.ScrolledText(info_window, wrap=tk.WORD)
+        text.pack(fill=tk.BOTH, expand=True)
+        
+        for key, value in self.system_info.items():
+            if isinstance(value, list):
+                text.insert(tk.END, f"{key}:\n")
+                for item in value:
+                    text.insert(tk.END, f"  - {item}\n")
+            else:
+                text.insert(tk.END, f"{key}: {value}\n")
+        
+        text.config(state=tk.DISABLED)
+    
+    def show_help(self):
+        help_window = tk.Toplevel(self.root)
+        help_window.title("Help")
+        help_window.geometry("600x400")
+        
+        text = scrolledtext.ScrolledText(help_window, wrap=tk.WORD)
+        text.pack(fill=tk.BOTH, expand=True)
+        
+        help_text = """Advanced OS Security Monitor - Help
+
+This application monitors your system for security events, resource usage, and potential threats in real-time.
+
+Features:
+- Real-time process monitoring with anomaly detection
+- System resource usage tracking (CPU, Memory, Disk)
+- Network connection monitoring
+- Alert system for suspicious activities
+- Detailed process and network information
+- Data visualization
+
+Dashboard:
+The top panel shows key system metrics that update in real-time.
+
+Log Panel:
+Displays all security events with color-coded severity levels.
+
+Process Explorer:
+View and manage running processes, including the ability to terminate suspicious ones.
+
+Network Monitor:
+View active network connections and detect suspicious activity.
+
+Export:
+Save logs in CSV, TXT, or Excel format for further analysis.
+
+Graphs:
+Visualize system resource usage over time."""
+        
+        text.insert(tk.END, help_text)
+        text.config(state=tk.DISABLED)
+    
+    def on_close(self):
+        self.running = False
+        if self.monitor_thread.is_alive():
+            self.monitor_thread.join(timeout=1)
+        if self.update_thread.is_alive():
+            self.update_thread.join(timeout=1)
+        self.root.destroy()
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = SecurityLogger(root)
+    root.mainloop()
+
