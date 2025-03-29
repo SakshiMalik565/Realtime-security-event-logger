@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Event Logger</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #008080;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Animated 3D Background */
+        @keyframes moveBackground {
+            0% { transform: translateY(0px) rotate(0deg) scale(1); }
+            50% { transform: translateY(-50px) rotate(30deg) scale(1.2); }
+            100% { transform: translateY(0px) rotate(0deg) scale(1); }
+        }
+
+        @keyframes floatSide {
+            0% { transform: translateX(0px); }
+            50% { transform: translateX(50px); }
+            100% { transform: translateX(0px); }
+        }
+
+        .floating-bg {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            animation: moveBackground 4s infinite ease-in-out alternate, floatSide 6s infinite ease-in-out;
+        }
+
+        /* Generate More Floating Elements */
+        .floating-bg:nth-child(n+1):nth-child(-n+10) {
+            width: 40px;
+            height: 40px;
+            animation-duration: 3s, 5s;
+        }
+
+        .floating-bg:nth-child(n+11):nth-child(-n+20) {
+            width: 30px;
+            height: 30px;
+            animation-duration: 2.5s, 4.5s;
+        }
+
+        .floating-bg:nth-child(n+21):nth-child(-n+30) {
+            width: 20px;
+            height: 20px;
+            animation-duration: 2s, 4s;
+        }
+
+        .container {
+            max-width: 600px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            position: relative;
+            z-index: 10;
+        }
+
+        h1 {
+            color: #005f6b;
+            margin-bottom: 10px;
+        }
+
+        .event-log {
+            margin: 20px 0;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 10px;
+            background-color: #b0e0e6;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        #eventList {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        #eventList li {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            transition: background-color 0.3s;
+        }
+
+        #eventList li:hover {
+            background-color: #87ceeb;
+        }
+
+        button {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            background-color: #007a99;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #005f6b;
+        }
+
+        .icon {
+            font-size: 60px;
+            color: #ffd600;
+            margin-bottom: 10px;
+        }
+
+        .footer {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #005f6b;
+        }
+    </style>
+</head>
+<body>
+    <!-- Generate More Floating Dots -->
+    <script>
+        for (let i = 0; i < 30; i++) {
+            let dot = document.createElement('div');
+            dot.classList.add('floating-bg');
+            dot.style.top = Math.random() * 100 + '%';
+            dot.style.left = Math.random() * 100 + '%';
+            document.body.appendChild(dot);
+        }
+    </script>
+    <div class="container">
+        <div class="icon">
+            <i class="fas fa-shield-alt"></i>
+        </div>
+        <h1>Real-Time OS Security Event Logger</h1>
+        <div class="event-log">
+            <h2>Event Log</h2>
+            <ul id="eventList"></ul>
+        </div>
+        <button id="simulateEvent">Simulate Security Event</button>
+        <div class="footer">
+            <p>&copy; 2025 Security Logger. All rights reserved.</p>
+        </div>
+    </div>
+    <script>
+        document.getElementById('simulateEvent').addEventListener('click', function() {
+            const eventList = document.getElementById('eventList');
+            const eventTypes = ['File Alteration', 'Privilege Change', 'Login Attempt'];
+            const randomEvent = eventTypes[Math.floor(Math.random() * eventTypes.length)];
+            const timestamp = new Date().toLocaleString();
+
+            const newEvent = document.createElement('li');
+            newEvent.textContent = `${timestamp} - ${randomEvent}`;
+            eventList.appendChild(newEvent);
+
+            if (randomEvent === 'Privilege Change') {
+                alert('Alert: Privilege Change Detected!');
+            }
+        });
+    </script>
+</body>
+</html>
