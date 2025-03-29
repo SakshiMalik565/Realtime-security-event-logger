@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Event Logger</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .event-log {
+            margin: 20px 0;
+        }
+
+        #eventList {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        #eventList li {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Real-Time OS Security Event Logger</h1>
+        <div class="event-log">
+            <h2>Event Log</h2>
+            <ul id="eventList"></ul>
+        </div>
+        <button id="simulateEvent">Simulate Security Event</button>
+    </div>
+    <script>
+        document.getElementById('simulateEvent').addEventListener('click', function() {
+            const eventList = document.getElementById('eventList');
+            const eventTypes = ['File Alteration', 'Privilege Change', 'Login Attempt'];
+            const randomEvent = eventTypes[Math.floor(Math.random() * eventTypes.length)];
+            const timestamp = new Date().toLocaleString();
+
+            const newEvent = document.createElement('li');
+            newEvent.textContent = `${timestamp} - ${randomEvent}`;
+            eventList.appendChild(newEvent);
+
+            // Alert system for questionable activity
+            if (randomEvent === 'Privilege Change') {
+                alert('Alert: Privilege Change Detected!');
+            }
+        });
+    </script>
+</body>
+</html>
